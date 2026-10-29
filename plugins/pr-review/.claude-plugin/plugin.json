@@ -1,0 +1,6 @@
+{
+  "name": "pr-review",
+  "version": "1.0.0",
+  "description": "Review a pull request against the repo's AGENTS.md",
+  "author": { "name": "Bryan Rose" }
+}

@@ -1,0 +1,113 @@
+# Reusable Claude PR review. Callers copy templates/claude-review.caller.yml.
+# Claude runs read-only (no write tools, read-only token) and returns the review as structured
+# output; a separate job with pull-requests: write keeps one marked comment on the PR up to date.
+# workflow_dispatch reviews any PR into the run summary instead of commenting.
+# Advisory only: never make this a required check.
+name: Claude review (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        type: string
+        default: claude-sonnet-5-5
+      deep-model:
+        description: Used when the PR has the review:deep label
+        type: string
+        default: claude-opus-5-5
+      max-turns:
+        type: number
+        default: 30
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: false
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+
+env:
+  PR: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+  MARKER: "<!-- claude-pr-review -->"
+
+jobs:
+  review:
+    # PR events: skip drafts, forks (no secrets) and Dependabot; `labeled` only matters for review:deep.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (!github.event.pull_request.draft &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login != 'dependabot[bot]' &&
+       (github.event.action != 'labeled' || github.event.label.name == 'review:deep'))
+    concurrency:
+      group: claude-review-${{ github.event.pull_request.number || github.event.inputs.pr }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    outputs:
+      review: ${{ fromJSON(steps.claude.outputs.structured_output).review }}
+    env:
+      MODEL: ${{ contains(github.event.pull_request.labels.*.name, 'review:deep') && inputs.deep-model || inputs.model }}
+    steps:
+      # The action restores .claude/ and CLAUDE.md from the base branch on PR events, not on dispatch,
+      # so a dispatch must not check out a fork's config next to the secrets.
+      - name: Refuse fork PRs on dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: test "$(gh pr view "$PR" --json isCrossRepository --jq .isCrossRepository)" = false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/pull/${{ env.PR }}/head
+          persist-credentials: false
+      - id: claude
+        uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
+        with:
+          github_token: ${{ github.token }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # shortcut: always agent-kit's default branch (the action takes no ref), so callers pinned to
+          # a tag still get the latest skill. Fine for one maintainer; see README "Version skew".
+          plugin_marketplaces: https://github.com/Bryan-Rose/agent-kit.git
+          plugins: pr-review@agent-kit
+          prompt: /pr-review:review-pr ${{ github.repository }}#${{ env.PR }}
+          claude_args: >-
+            --model ${{ env.MODEL }}
+            --max-turns ${{ inputs.max-turns }}
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)"
+            --json-schema '{"type":"object","properties":{"review":{"type":"string"}},"required":["review"]}'
+      - name: Write the review to the run summary
+        env:
+          REVIEW: ${{ fromJSON(steps.claude.outputs.structured_output).review }}
+        run: |
+          printf '_Model: %s_\n\n%s\n' "$MODEL" "$REVIEW" >> "$GITHUB_STEP_SUMMARY"
+
+  comment:
+    needs: review
+    if: github.event_name == 'pull_request'
+    concurrency:
+      group: claude-review-comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Create or update the review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REVIEW: ${{ needs.review.outputs.review }}
+        run: |
+          body=$(printf '%s\n%s' "$MARKER" "$REVIEW")
+          # Only our own comment: anyone can post a comment that starts with the marker.
+          id=$(gh api "repos/$GH_REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | tail -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GH_REPO/issues/comments/$id" -f body="$body" > /dev/null
+          else
+            gh pr comment "$PR" --body "$body"
+          fi

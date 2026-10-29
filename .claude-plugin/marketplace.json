@@ -1,0 +1,16 @@
+{
+  "name": "agent-kit",
+  "owner": {
+    "name": "Bryan Rose"
+  },
+  "metadata": {
+    "description": "Shared agentic PR workflow: the Claude PR review skill"
+  },
+  "plugins": [
+    {
+      "name": "pr-review",
+      "source": "./plugins/pr-review",
+      "description": "Review a pull request against the repo's AGENTS.md"
+    }
+  ]
+}
