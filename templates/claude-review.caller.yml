@@ -1,6 +1,7 @@
 # Claude reviews each PR and keeps one comment up to date (advisory, not a required check).
 # Logic lives in Bryan-Rose/agent-kit. Needs the ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN) secret.
 # Label a PR review:deep to re-review on the deep model; dispatch to review any PR into the run summary.
+# The reusable workflow skips drafts, forks, Dependabot and labels other than review:deep.
 name: Claude review
 
 on:
