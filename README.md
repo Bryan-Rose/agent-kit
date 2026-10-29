@@ -12,8 +12,8 @@ One home for the agentic PR workflow used across Bryan-Rose's repos:
 | | |
 |---|---|
 | Trigger | `pull_request` (opened, synchronize, reopened, ready_for_review, labeled) from same-repo branches; drafts, forks and Dependabot are skipped |
-| Model | `claude-sonnet-5-5`; the `review:deep` label switches that PR to `claude-opus-5-5` |
-| Tools | Read, Grep, Glob, `gh pr view`, `gh pr diff`, `gh issue view`; read-only token; `--max-turns 30` |
+| Model | `claude-haiku-5-5` (chosen over Sonnet in a comparison on nutridog #8–#11: more confirmed findings, about a quarter of the cost); the `review:deep` label switches that PR to `claude-opus-5-5` |
+| Tools | Read, Grep, Glob, `gh pr view`, `gh pr diff`, `gh issue view`; read-only token; `--max-turns 40` |
 | Output | Structured output → a separate `comment` job (the only one with `pull-requests: write`) creates or updates the marked comment by `github-actions[bot]` |
 | On demand | `gh workflow run "Claude review" -R <repo> -f pr=<N> [-f model=<id>]` writes the review to the run summary and doesn't comment |
 | Settled points | Only OWNER, MEMBER and COLLABORATOR comments marking a point fixed, declined or deferred |
