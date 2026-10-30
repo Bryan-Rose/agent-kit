@@ -10,14 +10,14 @@ on:
     inputs:
       model:
         type: string
-        default: claude-sonnet-5-5
+        default: claude-haiku-5-5
       deep-model:
         description: Used when the PR has the review:deep label
         type: string
         default: claude-opus-5-5
       max-turns:
         type: number
-        default: 30
+        default: 40
     secrets:
       ANTHROPIC_API_KEY:
         required: false
