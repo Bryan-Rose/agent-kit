@@ -16,6 +16,7 @@ One home for the agentic PR workflow used across Bryan-Rose's repos:
 | Tools | Read, Grep, Glob, `gh pr view`, `gh pr diff`, `gh issue view`; read-only token; `--max-turns 40` |
 | Output | Structured output → a separate `comment` job (the only one with `pull-requests: write`) creates or updates the marked comment by `github-actions[bot]` |
 | On demand | `gh workflow run "Claude review" -R <repo> -f pr=<N> [-f model=<id>]` writes the review to the run summary and doesn't comment |
+| Later rounds | The comment records the commit it reviewed; the next run passes the diff since then, and the skill raises suggestions and nits only on that, blocking issues anywhere |
 | Settled points | Only OWNER, MEMBER and COLLABORATOR comments marking a point fixed, declined or deferred |
 | Cost | The action logs a `result` block with `num_turns`, `total_cost_usd` and per-model usage |
 

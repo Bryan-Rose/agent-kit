@@ -48,6 +48,7 @@ jobs:
       issues: read
     outputs:
       review: ${{ fromJSON(steps.claude.outputs.structured_output).review }}
+      sha: ${{ steps.since.outputs.sha }}
     env:
       MODEL: ${{ contains(github.event.pull_request.labels.*.name, 'review:deep') && inputs.deep-model || inputs.model }}
     steps:
@@ -63,6 +64,26 @@ jobs:
         with:
           ref: refs/pull/${{ env.PR }}/head
           persist-credentials: false
+      # Later rounds: the diff since the commit the last review covered, so the skill limits suggestions
+      # and nits to new code. No previous review, same commit or a failed compare means a full review.
+      - id: since
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DIFF: .claude-review/new-commits.diff
+        run: |
+          head=$(git rev-parse HEAD)
+          echo "sha=$head" >> "$GITHUB_OUTPUT"
+          rm -rf .claude-review && mkdir .claude-review
+          [ "$GITHUB_EVENT_NAME" = pull_request ] || exit 0
+          # Only our own comment: anyone can post a comment that starts with the marker.
+          last=$(gh api "repos/$GH_REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .body" |
+            sed -n 's/^<!-- reviewed: \([0-9a-f]\{40\}\) -->$/\1/p' | tail -n 1) || last=""
+          if [ -n "$last" ] && [ "$last" != "$head" ]; then
+            # shortcut: after a force-push the compare can fail (full review) or include extra commits.
+            gh api "repos/$GH_REPO/compare/$last...$head" -H "Accept: application/vnd.github.diff" > "$DIFF" || rm -f "$DIFF"
+          fi
       - id: claude
         uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
         with:
@@ -101,11 +122,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           REVIEW: ${{ needs.review.outputs.review }}
+          SHA: ${{ needs.review.outputs.sha }}
         run: |
-          body=$(printf '%s\n%s' "$MARKER" "$REVIEW")
+          body=$(printf '%s\n<!-- reviewed: %s -->\n%s' "$MARKER" "$SHA" "$REVIEW")
           # Only our own comment: anyone can post a comment that starts with the marker.
           id=$(gh api "repos/$GH_REPO/issues/$PR/comments" --paginate \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | tail -n 1)
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | tail -n 1) || last=""
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GH_REPO/issues/comments/$id" -f body="$body" > /dev/null
           else
