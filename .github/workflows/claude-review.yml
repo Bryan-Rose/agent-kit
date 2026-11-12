@@ -127,7 +127,7 @@ jobs:
           body=$(printf '%s\n<!-- reviewed: %s -->\n%s' "$MARKER" "$SHA" "$REVIEW")
           # Only our own comment: anyone can post a comment that starts with the marker.
           id=$(gh api "repos/$GH_REPO/issues/$PR/comments" --paginate \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | tail -n 1) || last=""
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$MARKER\"))) | .id" | tail -n 1)
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GH_REPO/issues/comments/$id" -f body="$body" > /dev/null
           else
